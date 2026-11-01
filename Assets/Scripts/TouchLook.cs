@@ -9,41 +9,36 @@ using TouchPhase = UnityEngine.InputSystem.TouchPhase;
 // cameraPivot - дочерний объект с камерой (наклон вверх-вниз).
 public class TouchLook : MonoBehaviour
 {
-    [SerializeField] Transform cameraPivot;
-    [SerializeField] Camera cam;
-    [SerializeField] float fieldOfView = 70f;     // по GDD: 70 градусов против укачивания
+    public Transform cameraPivot;
+    public Camera cam;
+    [SerializeField] float fieldOfView = 70f;   // по ГДД, против укачивания
     [SerializeField] float maxPitch = 80f;
 
-    float pitch;           // текущий наклон вверх/вниз
-    int lookFinger = -1;   // палец, который крутит камеру
+    float pitch;
+    int lookFinger = -1;
 
     void Awake()
     {
-        // Починка "летающего тела": камера должна стоять ровно в центре головы.
-        // Если у камеры или у CameraPivot есть смещение, поворот идёт по дуге вокруг чужой точки.
+        // Камера должна стоять ровно в центре головы, иначе поворот идёт по дуге
         var p = cameraPivot.localPosition;
-        cameraPivot.localPosition = new Vector3(0f, p.y, 0f);   // pivot строго над центром игрока
+        cameraPivot.localPosition = new Vector3(0f, p.y, 0f);
         if (cam != null && cam.transform != cameraPivot)
         {
-            cam.transform.SetParent(cameraPivot, false);        // камера дочерняя к pivot
-            cam.transform.localPosition = Vector3.zero;         // без смещения
-            cam.transform.localRotation = Quaternion.identity;  // без собственного поворота
+            cam.transform.SetParent(cameraPivot, false);
+            cam.transform.localPosition = Vector3.zero;
+            cam.transform.localRotation = Quaternion.identity;
         }
+        ResetView();
+        if (cam != null) cam.fieldOfView = fieldOfView;
+    }
+
+    public void ResetView()
+    {
         pitch = 0f;
         cameraPivot.localRotation = Quaternion.identity;
     }
 
-    void OnEnable()
-    {
-        EnhancedTouchSupport.Enable();
-        if (cam != null) cam.fieldOfView = fieldOfView;
-    }
-
-    void OnDisable()
-    {
-        EnhancedTouchSupport.Disable();
-        lookFinger = -1;
-    }
+    void OnDisable() { lookFinger = -1; }
 
     bool InMyHalf(Vector2 p)
     {
@@ -55,22 +50,18 @@ public class TouchLook : MonoBehaviour
     {
         foreach (var t in Touch.activeTouches)
         {
-            // Берём палец один раз при касании: в нашей половине и не на кнопке UI
             if (t.phase == TouchPhase.Began && lookFinger == -1 && InMyHalf(t.startScreenPosition)
                 && !(EventSystem.current != null && EventSystem.current.IsPointerOverGameObject(t.touchId))
-                && !Interactor.WantsTouch(t.startScreenPosition))  // палец на предмете: это не джойстик/камера
+                && !Interactor.WantsTouch(t.startScreenPosition))
                 lookFinger = t.finger.index;
 
             if (t.finger.index != lookFinger) continue;
 
-            if (t.phase == TouchPhase.Moved)
-                Rotate(t.delta);
-
-            if (t.phase == TouchPhase.Ended || t.phase == TouchPhase.Canceled)
-                lookFinger = -1;
+            if (t.phase == TouchPhase.Moved) Rotate(t.delta);
+            if (t.phase == TouchPhase.Ended || t.phase == TouchPhase.Canceled) lookFinger = -1;
         }
 
-        // Мышь с зажатой правой кнопкой, только для проверки в редакторе
+        // Мышь (правая кнопка) только для проверки в редакторе
         if (Touch.activeTouches.Count == 0 && Mouse.current != null && Mouse.current.rightButton.isPressed)
             Rotate(Mouse.current.delta.ReadValue());
     }
@@ -78,8 +69,8 @@ public class TouchLook : MonoBehaviour
     void Rotate(Vector2 delta)
     {
         float s = ControlSettings.lookSensitivity;
-        transform.Rotate(0f, delta.x * s, 0f);                              // влево-вправо
-        pitch = Mathf.Clamp(pitch - delta.y * s, -maxPitch, maxPitch);      // вверх-вниз
+        transform.Rotate(0f, delta.x * s, 0f);
+        pitch = Mathf.Clamp(pitch - delta.y * s, -maxPitch, maxPitch);
         cameraPivot.localEulerAngles = new Vector3(pitch, 0f, 0f);
     }
 }

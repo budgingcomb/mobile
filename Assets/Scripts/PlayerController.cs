@@ -6,7 +6,7 @@ using UnityEngine.InputSystem;
 [RequireComponent(typeof(CharacterController))]
 public class PlayerController : MonoBehaviour
 {
-    [SerializeField] FloatingJoystick joystick;
+    public FloatingJoystick joystick;
     [SerializeField] float walkSpeed = 2.2f;      // м/с, комната маленькая, ходим неспешно
     [SerializeField] float acceleration = 10f;    // плавный разгон (против укачивания)
     [SerializeField] float gravity = -9.81f;

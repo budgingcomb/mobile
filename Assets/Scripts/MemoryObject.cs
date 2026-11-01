@@ -2,50 +2,49 @@ using System;
 using UnityEngine;
 using UnityEngine.Events;
 
-// Состояния предмета по ГДД (раздел 8.5). В сохранение пишется просто число.
+// Состояния предмета по ГДД (раздел 8.5). В сохранение пишется число.
 public enum MemoryState { Gray = 0, Touched = 1, HologramPlaying = 2, PuzzleActive = 3, Restored = 4 }
 
-// Вешается на предмет памяти. У предмета должен быть Collider на слое Interactable.
-// Один материал на тип предмета: "родной" цвет берётся из материала, серый считается автоматически.
+// Вешается на предмет памяти. Collider должен быть на слое Interactable.
 public class MemoryObject : MonoBehaviour
 {
     public static Transform Player;   // выставляет Interactor
 
-    [Header("Общее")]
-    [SerializeField] string memoryId = "memory_1";
-    [SerializeField] float shimmerDistance = 3f;                        // мерцание, когда игрок ближе
+    [Header("Связи")]
+    public int memoryIndex = 0;          // 0..6, номер в дневнике
+    public HologramPlayer hologram;      // если пусто, голограмма идёт по таймеру-заглушке
+    public MemoryPuzzle puzzle;          // если пусто, загадка решается по таймеру-заглушке
+
+    [Header("Вид")]
+    [SerializeField] float shimmerDistance = 3f;
     [SerializeField, ColorUsage(false, true)] Color glowColor = new Color(0.9f, 0.8f, 0.5f);
     [SerializeField] float colorReturnSeconds = 2.5f;
 
-    [Header("Заглушки прототипа (потом выключить)")]
-    [SerializeField] bool fakeHologram = true;      // true: голограмма "играет" по таймеру
+    [Header("Заглушки (работают, только если нет hologram / puzzle)")]
     [SerializeField] float fakeHologramSeconds = 3f;
-    [SerializeField] bool fakePuzzle = true;        // true: загадка решается сама по таймеру
     [SerializeField] float fakePuzzleSeconds = 3f;
 
     [Header("События")]
-    public UnityEvent onHologramStart;   // сюда потом подключишь видео
+    public UnityEvent onHologramStart;
     public UnityEvent onPuzzleStart;
     public UnityEvent onRestored;
 
-    public event Action<MemoryObject, MemoryState> StateChanged;   // для SaveSystem и ForgettingSystem
+    public event Action<MemoryObject, MemoryState> StateChanged;
 
     public MemoryState State => state;
-    public int StateId => (int)state;
-    public string MemoryId => memoryId;
     public bool CanBeTouched => state == MemoryState.Gray;
 
-    static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");     // URP
-    static readonly int LegacyColorId = Shader.PropertyToID("_Color");       // Standard
+    static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+    static readonly int LegacyColorId = Shader.PropertyToID("_Color");
     static readonly int EmissionId = Shader.PropertyToID("_EmissionColor");
-    static MaterialPropertyBlock mpb;                                        // один на всех, без лишних аллокаций
+    static MaterialPropertyBlock mpb;
 
     Renderer[] rends;
     Color[] original, gray;
     int colorId;
     MemoryState state = MemoryState.Gray;
-    float timer, glow, colorT;
-    float shownGlow = -1f, shownColorT = -1f;   // что сейчас записано в материал
+    float timer, glow, colorT, pingTimer;
+    float shownGlow = -1f, shownColorT = -1f;
     bool aimed;
 
     void Awake()
@@ -68,19 +67,20 @@ public class MemoryObject : MonoBehaviour
         Apply(0f, 0f);
     }
 
-    // ---------- Вызывается Interactor-ом ----------
     public void SetAimed(bool value) => aimed = value;
+
+    // Подсказка "Лампа": предмет ярко светится несколько секунд
+    public void Ping(float seconds) { if (state == MemoryState.Gray) pingTimer = seconds; }
 
     public void Touch()
     {
         if (!CanBeTouched) return;
-        glow = 0f;
+        glow = 0f; pingTimer = 0f;
         Apply(0f, 0f);
         SetState(MemoryState.Touched);
-        SetState(MemoryState.HologramPlaying);   // в прототипе сразу идём дальше
+        SetState(MemoryState.HologramPlaying);
     }
 
-    // ---------- Вызывать из видеоплеера и загадки ----------
     public void FinishHologram()
     {
         if (state == MemoryState.HologramPlaying) SetState(MemoryState.PuzzleActive);
@@ -91,10 +91,10 @@ public class MemoryObject : MonoBehaviour
         if (state == MemoryState.PuzzleActive) SetState(MemoryState.Restored);
     }
 
-    // Для SaveSystem: загрузить состояние без событий. Промежуточные состояния начинаются заново.
+    // Загрузка состояния без событий; незаконченные состояния начинаются заново с Gray
     public void LoadState(MemoryState s)
     {
-        timer = 0f;
+        timer = 0f; pingTimer = 0f;
         if (s == MemoryState.Restored)
         {
             state = MemoryState.Restored;
@@ -111,15 +111,31 @@ public class MemoryObject : MonoBehaviour
         }
     }
 
+    // Для поражения и выхода в меню: остановить голограмму и загадку, вернуть сохранённое состояние
+    public void ResetToSaved(MemoryState saved)
+    {
+        if (hologram != null) hologram.Stop();
+        if (puzzle != null) puzzle.Cancel();
+        LoadState(saved);
+    }
+
     void SetState(MemoryState s)
     {
         state = s;
         timer = 0f;
         switch (s)
         {
-            case MemoryState.HologramPlaying: onHologramStart.Invoke(); break;
-            case MemoryState.PuzzleActive:    onPuzzleStart.Invoke();   break;
-            case MemoryState.Restored:        onRestored.Invoke();      break;
+            case MemoryState.HologramPlaying:
+                if (hologram != null) hologram.Play(this, false);
+                onHologramStart.Invoke();
+                break;
+            case MemoryState.PuzzleActive:
+                if (puzzle != null) puzzle.Begin(this);
+                onPuzzleStart.Invoke();
+                break;
+            case MemoryState.Restored:
+                onRestored.Invoke();
+                break;
         }
         StateChanged?.Invoke(this, s);
     }
@@ -132,35 +148,32 @@ public class MemoryObject : MonoBehaviour
             case MemoryState.Gray:
                 UpdateGlow(dt);
                 break;
-
             case MemoryState.HologramPlaying:
-                if (!fakeHologram) break;
+                if (hologram != null) break;
                 timer += dt;
                 if (timer >= fakeHologramSeconds) FinishHologram();
                 break;
-
             case MemoryState.PuzzleActive:
-                if (!fakePuzzle) break;
+                if (puzzle != null) break;
                 timer += dt;
                 if (timer >= fakePuzzleSeconds) CompletePuzzle();
                 break;
-
             case MemoryState.Restored:
                 if (colorT < 1f)
                 {
                     colorT = Mathf.MoveTowards(colorT, 1f, dt / colorReturnSeconds);
                     Apply(colorT, 0f);
                 }
-                else enabled = false;   // всё закончено, Update больше не вызывается
+                else enabled = false;
                 break;
         }
     }
 
-    // Мерцание рядом с игроком и ровное свечение, когда на предмет смотрит прицел
     void UpdateGlow(float dt)
     {
         float target = 0f;
-        if (aimed) target = 1f;
+        if (pingTimer > 0f) { pingTimer -= dt; target = 0.7f + 0.3f * Mathf.Sin(Time.time * 8f); }
+        else if (aimed) target = 1f;
         else if (Player != null)
         {
             float sqr = (Player.position - transform.position).sqrMagnitude;
@@ -171,7 +184,6 @@ public class MemoryObject : MonoBehaviour
         Apply(0f, glow);
     }
 
-    // Пишет в материал только если значение реально изменилось
     void Apply(float c, float g)
     {
         if (Mathf.Abs(c - shownColorT) < 0.002f && Mathf.Abs(g - shownGlow) < 0.002f) return;
