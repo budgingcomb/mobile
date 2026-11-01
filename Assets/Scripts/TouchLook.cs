@@ -57,7 +57,8 @@ public class TouchLook : MonoBehaviour
         {
             // Берём палец один раз при касании: в нашей половине и не на кнопке UI
             if (t.phase == TouchPhase.Began && lookFinger == -1 && InMyHalf(t.startScreenPosition)
-                && !(EventSystem.current != null && EventSystem.current.IsPointerOverGameObject(t.touchId)))
+                && !(EventSystem.current != null && EventSystem.current.IsPointerOverGameObject(t.touchId))
+                && !Interactor.WantsTouch(t.startScreenPosition))  // палец на предмете: это не джойстик/камера
                 lookFinger = t.finger.index;
 
             if (t.finger.index != lookFinger) continue;

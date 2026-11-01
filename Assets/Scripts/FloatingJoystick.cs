@@ -46,7 +46,8 @@ public class FloatingJoystick : MonoBehaviour
         {
             // Новый палец в нашей половине и не на кнопке интерфейса -> берём его
             if (t.phase == TouchPhase.Began && finger == -1 && InMyHalf(t.startScreenPosition)
-                && !(EventSystem.current != null && EventSystem.current.IsPointerOverGameObject(t.touchId)))
+                && !(EventSystem.current != null && EventSystem.current.IsPointerOverGameObject(t.touchId))
+                && !Interactor.WantsTouch(t.startScreenPosition))  // палец на предмете: это не джойстик/камера
             {
                 finger = t.finger.index;
                 origin = t.screenPosition;
